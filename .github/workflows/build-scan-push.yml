@@ -129,7 +129,7 @@ jobs:
         run: |
           aws eks update-kubeconfig \
             --region us-east-1 \
-            --name sorcery-eks-cluster
+            --name ${{ vars.EKS_CLUSTER}}
 
       - name: 🌐 Get Backend service DNS
         id: backend-url
