@@ -89,7 +89,7 @@ jobs:
           chmod +x wizcli
           ./wizcli auth
           ./wizcli docker scan --image "${{ steps.first-tag.outputs.tag }}" --dockerfile "${{ matrix.dockerfile }}Dockerfile" \
-            -p "Default vulnerabilities policy - Do Not Modify" \
+            -p "Default vulnerabilities policy" \
             -p "Default sensitive data policy" \
             -p "Default secrets policy" \
             -p "Default malware policy"
@@ -140,9 +140,13 @@ jobs:
       - name: 🚀 Deploy Frontend via Helm with ALB Ingress
         run: |
           helm upgrade --install frontend ./helm/sorcery-solutions-frontend \
-            --set image.repository=${{ vars.IMAGE_REGISTRY }}/ \
             --namespace sorcery \
-            --set env.NEXT_PUBLIC_API_BASE_URL="${{ env.BACKEND_URL }}" \
+            --set image.repository="${{ vars.IMAGE_REGISTRY }}/" \
+            --set-string env[0].name=NEXT_PUBLIC_API_BASE_URL \
+            --set-string env[0].value="${{ env.BACKEND_URL }}" \
+            --set service.type=ClusterIP \
+            --set service.port=80 \
+            --set service.targetPort=3000 \
             --set ingress.enabled=true \
             --set ingress.className=alb \
             --set ingress.annotations."alb\.ingress\.kubernetes\.io/scheme"=internet-facing \
