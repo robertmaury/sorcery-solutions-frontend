@@ -141,7 +141,7 @@ jobs:
         run: |
           helm upgrade --install frontend ./helm/sorcery-solutions-frontend \
             --namespace sorcery \
-            --set image.repository="${{ vars.IMAGE_REGISTRY }}/" \
+            --set image.repository="${{ vars.IMAGE_REGISTRY }}" \
             --set-string env[0].name=NEXT_PUBLIC_API_BASE_URL \
             --set-string env[0].value="${{ env.BACKEND_URL }}" \
             --set service.type=ClusterIP \
