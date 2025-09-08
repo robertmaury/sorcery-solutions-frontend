@@ -134,7 +134,7 @@ jobs:
       - name: 🌐 Get Backend service DNS
         id: backend-url
         run: |
-          BACKEND_SVC=$(kubectl get svc backend -n sorcery -o jsonpath="{.metadata.name}")
+          BACKEND_SVC=$(kubectl get svc backend-sorcery-solutions-backend -n sorcery -o jsonpath="{.metadata.name}")
           echo "BACKEND_URL=http://${BACKEND_SVC}.sorcery.svc.cluster.local:8000" >> $GITHUB_ENV
 
       - name: 🚀 Deploy Frontend via Helm with ALB Ingress
@@ -157,7 +157,7 @@ jobs:
         run: |
           echo "⏳ Waiting for ALB Ingress..."
           for i in {1..30}; do
-            ALB_HOSTNAME=$(kubectl get ingress frontend -n sorcery -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+            ALB_HOSTNAME=$(kubectl get ingress frontend-sorcery-solutions-frontend -n sorcery -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
             if [[ ! -z "$ALB_HOSTNAME" ]]; then
               echo "✅ ALB Hostname: http://$ALB_HOSTNAME"
               echo "ALB_HOSTNAME=http://$ALB_HOSTNAME" >> $GITHUB_ENV
