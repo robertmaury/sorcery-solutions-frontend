@@ -20,51 +20,81 @@ permissions:
 
 jobs:
   sync-lockfile:
-    # This job always runs; steps are conditional
     runs-on: ubuntu-latest
+    # This job ALWAYS runs so outputs are always available
     permissions:
-      contents: write   # needed to push back on same-repo PRs
+      contents: write
+    outputs:
+      final_sha: ${{ steps.out.outputs.final_sha }}
+      ref_name:  ${{ steps.ref.outputs.ref_name }}
+      is_pr:     ${{ steps.flags.outputs.is_pr }}
+      same_repo: ${{ steps.flags.outputs.same_repo }}
     steps:
+      # --- Decide refs and flags (always runs) ---
+      - id: flags
+        run: |
+          echo "is_pr=${{ github.event_name == 'pull_request' && 'true' || 'false' }}" >> $GITHUB_OUTPUT
+          echo "same_repo=${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name == github.repository) && 'true' || 'false' }}" >> $GITHUB_OUTPUT
+      - id: ref
+        run: |
+          # For PRs use the PR head ref; otherwise the current ref name
+          echo "ref_name=${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref_name }}" >> $GITHUB_OUTPUT
+
       - uses: actions/checkout@v4
         with:
-          # Check out the PR branch name (for PRs) or the pushed ref (for pushes)
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref_name }}
+          ref: ${{ steps.ref.outputs.ref_name }}
           fetch-depth: 0
           persist-credentials: true
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '18'   # match your Docker base image
+          node-version: '18'  # match your Docker base image
           cache: 'npm'
 
-      # Only validate on PRs
-      - name: Validate lockfile (PRs only)
+      # --- Validate only on PRs ---
+      - name: Validate lockfile (dry-run)
         id: validate
-        if: github.event_name == 'pull_request'
+        if: steps.flags.outputs.is_pr == 'true'
         run: |
           set +e
           npm ci --dry-run >/dev/null 2>&1
           echo "exit_code=$?" >> $GITHUB_OUTPUT
           exit 0
 
-      # Only regenerate on PRs when out of sync
-      - name: Regenerate package-lock.json
-        if: github.event_name == 'pull_request' && steps.validate.outputs.exit_code != '0'
+      # --- Regenerate only if out-of-sync on same-repo PRs ---
+      - name: Regenerate lockfile
+        if: |
+          steps.flags.outputs.is_pr == 'true' &&
+          steps.validate.outputs.exit_code != '0' &&
+          steps.flags.outputs.same_repo == 'true'
         run: npm install --package-lock-only --no-audit --no-fund
 
-      # Push back only for same-repo PRs
-      - name: Commit & push updated lockfile (same-repo PRs)
-        if: >
-          github.event_name == 'pull_request' &&
+      - name: Commit & push lockfile
+        if: |
+          steps.flags.outputs.is_pr == 'true' &&
           steps.validate.outputs.exit_code != '0' &&
-          github.event.pull_request.head.repo.full_name == github.repository
+          steps.flags.outputs.same_repo == 'true'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package-lock.json
           git commit -m "chore: sync package-lock.json with package.json [CI]" || echo "No changes"
           git push
-          
+
+      # --- Optional: fail fast on forks (or switch to a helper-PR flow) ---
+      - name: Fail fast on forks (cannot push)
+        if: |
+          steps.flags.outputs.is_pr == 'true' &&
+          steps.validate.outputs.exit_code != '0' &&
+          steps.flags.outputs.same_repo != 'true'
+        run: |
+          echo "::error ::Forked PR: lockfile out of sync. Please run 'npm install --package-lock-only' and commit."
+          exit 1
+
+      # --- Always publish an output SHA, even if nothing happened ---
+      - id: out
+        run: echo "final_sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
   docker_build:
     needs: sync-lockfile
     runs-on: ubuntu-latest
@@ -79,8 +109,11 @@ jobs:
             image: ${{ vars.IMAGE_REGISTRY }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          # Always build from the exact commit that includes the lockfile fix
+          ref: ${{ needs.sync-lockfile.outputs.final_sha }}
+          fetch-depth: 0
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
