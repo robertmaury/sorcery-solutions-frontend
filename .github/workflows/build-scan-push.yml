@@ -25,6 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: true 
           ref: ${{ github.event.pull_request.head.ref }}
 
       - uses: actions/setup-node@v4
