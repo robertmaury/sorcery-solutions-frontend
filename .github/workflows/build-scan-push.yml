@@ -84,10 +84,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      # - name: Pull Image for Wiz Scan
-      #   if: github.event_name != 'pull_request'
-      #   run: docker pull "${{ steps.first-tag.outputs.tag }}"
-
       - name: Scan Container with Wiz
         run: |
           curl -Lo wizcli https://wizcli.app.wiz.io/latest/wizcli-linux-amd64
@@ -100,26 +96,13 @@ jobs:
             -p "Default malware policy"
         continue-on-error: true
 
-      # - name: Push Docker Image
-      #   id: push-image
-      #   if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-      #   uses: docker/build-push-action@v6
-      #   with:
-      #     cache-from: type=gha
-      #     cache-to: type=gha,mode=max
-      #     context: ${{ matrix.dockerfile }}
-      #     platforms: linux/amd64
-      #     push: true
-      #     tags: ${{ steps.meta.outputs.tags }}
-      #     labels: ${{ steps.meta.outputs.labels }}
-
-      # - name: Pull Image for Wiz Tagging
-      #   if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-      #   run: |
-      #     docker pull ${{ steps.first-tag.outputs.tag }}
+      - name: Pull Image for Wiz Tagging
+        if: github.event_name != 'pull_request'
+        run: |
+          docker pull ${{ steps.first-tag.outputs.tag }}
 
       - name: Tag Container with Wiz
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        if: github.event_name != 'pull_request'
         run: |
           ./wizcli docker tag --image "${{ steps.first-tag.outputs.tag }}"
         continue-on-error: true
