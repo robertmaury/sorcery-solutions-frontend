@@ -20,39 +20,51 @@ permissions:
 
 jobs:
   sync-lockfile:
+    # This job always runs; steps are conditional
     runs-on: ubuntu-latest
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write   # needed to push back on same-repo PRs
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          # Check out the PR branch name (for PRs) or the pushed ref (for pushes)
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: true
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '18'   # match your Docker base image’s Node
+          node-version: '18'   # match your Docker base image
           cache: 'npm'
 
-      - name: Validate lockfile (dry-run)
+      # Only validate on PRs
+      - name: Validate lockfile (PRs only)
         id: validate
+        if: github.event_name == 'pull_request'
         run: |
           set +e
           npm ci --dry-run >/dev/null 2>&1
           echo "exit_code=$?" >> $GITHUB_OUTPUT
           exit 0
 
+      # Only regenerate on PRs when out of sync
       - name: Regenerate package-lock.json
-        if: steps.validate.outputs.exit_code != '0'
+        if: github.event_name == 'pull_request' && steps.validate.outputs.exit_code != '0'
         run: npm install --package-lock-only --no-audit --no-fund
 
-      - name: Commit and push updated lockfile
-        if: steps.validate.outputs.exit_code != '0'
+      # Push back only for same-repo PRs
+      - name: Commit & push updated lockfile (same-repo PRs)
+        if: >
+          github.event_name == 'pull_request' &&
+          steps.validate.outputs.exit_code != '0' &&
+          github.event.pull_request.head.repo.full_name == github.repository
         run: |
-          git config user.name "github-actions[bot]"
+          git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package-lock.json
-          git commit -m "chore: sync package-lock.json with package.json [CI]"
+          git commit -m "chore: sync package-lock.json with package.json [CI]" || echo "No changes"
           git push
-
+          
   docker_build:
     needs: sync-lockfile
     runs-on: ubuntu-latest
