@@ -79,9 +79,14 @@ jobs:
           cache-to: type=gha,mode=max
           context: ${{ matrix.dockerfile }}
           load: true
+          push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      # - name: Pull Image for Wiz Scan
+      #   if: github.event_name != 'pull_request'
+      #   run: docker pull "${{ steps.first-tag.outputs.tag }}"
 
       - name: Scan Container with Wiz
         run: |
@@ -95,23 +100,23 @@ jobs:
             -p "Default malware policy"
         continue-on-error: true
 
-      - name: Push Docker Image
-        id: push-image
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        uses: docker/build-push-action@v6
-        with:
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          context: ${{ matrix.dockerfile }}
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+      # - name: Push Docker Image
+      #   id: push-image
+      #   if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+      #   uses: docker/build-push-action@v6
+      #   with:
+      #     cache-from: type=gha
+      #     cache-to: type=gha,mode=max
+      #     context: ${{ matrix.dockerfile }}
+      #     platforms: linux/amd64
+      #     push: true
+      #     tags: ${{ steps.meta.outputs.tags }}
+      #     labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Pull Image for Wiz Tagging
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        run: |
-          docker pull ${{ steps.first-tag.outputs.tag }}
+      # - name: Pull Image for Wiz Tagging
+      #   if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+      #   run: |
+      #     docker pull ${{ steps.first-tag.outputs.tag }}
 
       - name: Tag Container with Wiz
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -120,58 +125,63 @@ jobs:
         continue-on-error: true
 
       - name: 💾 Install kubectl
+        if: github.event_name != 'pull_request'
         uses: azure/setup-kubectl@v3
 
       - name: 💾 Install Helm
+        if: github.event_name != 'pull_request'
         uses: azure/setup-helm@v4
 
       - name: 📡 Update kubeconfig for EKS
+        if: github.event_name != 'pull_request'
         run: |
           aws eks update-kubeconfig \
             --region us-east-1 \
             --name ${{ vars.EKS_CLUSTER}}
 
       - name: 🌐 Get Backend service DNS
+        if: github.event_name != 'pull_request'
         id: backend-url
         run: |
           BACKEND_SVC=$(kubectl get svc backend-sorcery-solutions-backend -n sorcery -o jsonpath="{.metadata.name}")
           echo "BACKEND_URL=http://${BACKEND_SVC}.sorcery.svc.cluster.local:8000" >> $GITHUB_ENV
 
-      - name: 🚀 Deploy Frontend via Helm with ALB Ingress
+      - name: 🚀 Deploy Frontend via Helm with ELB Ingress
+        if: github.event_name != 'pull_request'
         run: |
           helm upgrade --install frontend ./helm/sorcery-solutions-frontend \
             --namespace sorcery \
             --set image.repository="${{ vars.IMAGE_REGISTRY }}" \
             --set-string env[0].name=NEXT_PUBLIC_API_BASE_URL \
             --set-string env[0].value="${{ env.BACKEND_URL }}" \
-            --set service.type=ClusterIP \
+            --set service.type=LoadBalancer \
             --set service.port=80 \
             --set service.targetPort=3000 \
-            --set ingress.enabled=true \
-            --set ingress.className=alb \
-            --set ingress.annotations."alb\.ingress\.kubernetes\.io/scheme"=internet-facing \
-            --set ingress.annotations."alb\.ingress\.kubernetes\.io/target-type"=ip \
-            --set ingress.annotations."alb\.ingress\.kubernetes\.io/listen-ports"='[{"HTTP":80}]' \
-            --set ingress.hosts[0].host=frontend.sorcery.local \
-            --set ingress.hosts[0].paths[0].path="/" \
-            --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific \
+            --set ingress.enabled=false \
+            --set 'service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-type=nlb' \
+            --set 'service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-nlb-target-type=ip' \
+            --set 'service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-scheme=internet-facing' \
+            --set 'service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-cross-zone-load-balancing-enabled=true' \
+            --set 'service.externalTrafficPolicy=Local' \
             --wait
 
-      - name: 🌐 Wait for ALB Ingress and Output ALB DNS
+      - name: 🌐 Wait for External ELB
+        if: github.event_name != 'pull_request'
         run: |
-          echo "⏳ Waiting for ALB Ingress..."
+          echo "⏳ Waiting for ELBs..."
           for i in {1..30}; do
-            ALB_HOSTNAME=$(kubectl get ingress frontend-sorcery-solutions-frontend -n sorcery -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
-            if [[ ! -z "$ALB_HOSTNAME" ]]; then
-              echo "✅ ALB Hostname: http://$ALB_HOSTNAME"
-              echo "ALB_HOSTNAME=http://$ALB_HOSTNAME" >> $GITHUB_ENV
+            ELB_HOSTNAME=$(kubectl get service frontend-sorcery-solutions-frontend -n sorcery -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+            if [[ ! -z "$ELB_HOSTNAME" ]]; then
+              echo "✅ ELB Hostname: http://$ELB_HOSTNAME"
+              echo "ELB_HOSTNAME=http://$ELB_HOSTNAME" >> $GITHUB_ENV
               break
             fi
-            echo "Waiting for ALB hostname..."
+            echo "Waiting for ELB hostname..."
             sleep 10
           done
 
       - name: ✅ Done
+        if: github.event_name != 'pull_request'
         run: |
           echo "Deployment complete! 🎉"
-          echo "Frontend exposed at: ${{ env.ALB_HOSTNAME }}"
+          echo "Frontend exposed at: ${{ env.ELB_HOSTNAME }}"
