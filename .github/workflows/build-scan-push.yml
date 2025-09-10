@@ -16,7 +16,7 @@ on:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 jobs:
   sync-lockfile:
@@ -52,8 +52,9 @@ jobs:
           git add package-lock.json
           git commit -m "chore: sync package-lock.json with package.json [CI]"
           git push
-          
+
   docker_build:
+    needs: sync-lockfile
     runs-on: ubuntu-latest
     env:
       WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
