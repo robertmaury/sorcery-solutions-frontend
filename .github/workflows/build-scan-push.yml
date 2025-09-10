@@ -10,6 +10,7 @@ on:
       - src/**
       - "**.ts"
       - Dockerfile
+      - package**
   pull_request:
     branches:
       - main
