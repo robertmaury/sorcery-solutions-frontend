@@ -19,6 +19,40 @@ permissions:
   contents: read
 
 jobs:
+  sync-lockfile:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'   # match your Docker base image’s Node
+          cache: 'npm'
+
+      - name: Validate lockfile (dry-run)
+        id: validate
+        run: |
+          set +e
+          npm ci --dry-run >/dev/null 2>&1
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+          exit 0
+
+      - name: Regenerate package-lock.json
+        if: steps.validate.outputs.exit_code != '0'
+        run: npm install --package-lock-only --no-audit --no-fund
+
+      - name: Commit and push updated lockfile
+        if: steps.validate.outputs.exit_code != '0'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "chore: sync package-lock.json with package.json [CI]"
+          git push
+          
   docker_build:
     runs-on: ubuntu-latest
     env:
