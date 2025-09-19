@@ -215,7 +215,7 @@ jobs:
       - name: Clear Admission controller cache
         if: github.event_name != 'pull_request'
         run : |
-          kubectl rollout restart deployment wiz-k8s-ac-wiz-admission-controller -n wiz
+          kubectl rollout restart deployment wiz-integration-wiz-admission-controller -n wiz
 
       - name: 🚀 Deploy Frontend via Helm with ELB Ingress
         if: github.event_name != 'pull_request'
