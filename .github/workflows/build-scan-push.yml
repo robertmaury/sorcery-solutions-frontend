@@ -217,7 +217,7 @@ jobs:
           helm upgrade --install frontend ./helm/sorcery-solutions-frontend \
             --namespace sorcery \
             --set image.repository="${{ vars.IMAGE_REGISTRY }}" \
-            --set image.tag="${{ steps.first-tag.outputs.tag }}" \
+            --set image.tag="${{ env.tag }}" \
             --set image.pullPolicy=Always \
             --set-string env[0].name=NEXT_PUBLIC_API_BASE_URL \
             --set-string env[0].value="${{ env.BACKEND_URL }}" \
