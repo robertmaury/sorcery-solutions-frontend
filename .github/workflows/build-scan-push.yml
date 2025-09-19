@@ -116,6 +116,10 @@ jobs:
           ref: ${{ needs.sync-lockfile.outputs.final_sha }}
           fetch-depth: 0
 
+      - name: Get Short SHA
+        id: get_short_sha
+        run: echo "SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_ENV
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -128,11 +132,8 @@ jobs:
         with:
           images: ${{ matrix.image }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+            type=raw,value=latest
 
       - name: Get First Docker Tag
         id: first-tag
@@ -171,10 +172,10 @@ jobs:
           chmod +x wizcli
           ./wizcli auth
           ./wizcli docker scan --image "${{ steps.first-tag.outputs.tag }}" --dockerfile "${{ matrix.dockerfile }}Dockerfile" \
-            -p "Default vulnerabilities policy" \
-            -p "Default sensitive data policy" \
-            -p "Default secrets policy" \
-            -p "Default malware policy"
+            -p "Rmaury-Data" \
+            -p "Rmaury-IAC" \
+            -p "Rmaury-Secrets" \
+            -p "Rmaury-Vuln"
         continue-on-error: true
 
       - name: Pull Image for Wiz Tagging
@@ -216,7 +217,7 @@ jobs:
           helm upgrade --install frontend ./helm/sorcery-solutions-frontend \
             --namespace sorcery \
             --set image.repository="${{ vars.IMAGE_REGISTRY }}" \
-            --set image.tag="main" \
+            --set image.tag="${{ steps.first-tag.outputs.tag }}" \
             --set image.pullPolicy=Always \
             --set-string env[0].name=NEXT_PUBLIC_API_BASE_URL \
             --set-string env[0].value="${{ env.BACKEND_URL }}" \
