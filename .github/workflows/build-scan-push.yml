@@ -138,7 +138,8 @@ jobs:
       - name: Get First Docker Tag
         id: first-tag
         run: |
-          echo "tag=${{ fromJSON(steps.meta.outputs.json).tags[0] }}" >> $GITHUB_ENV
+          TAG=$(echo '${{ steps.meta.outputs.json }}' | jq -r '.tags[0]' | cut -d: -f2)
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Configure AWS Credentials
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -171,7 +172,7 @@ jobs:
           curl -Lo wizcli https://wizcli.app.wiz.io/latest/wizcli-linux-amd64
           chmod +x wizcli
           ./wizcli auth
-          ./wizcli docker scan --image "${{ steps.first-tag.outputs.tag }}" --dockerfile "${{ matrix.dockerfile }}Dockerfile" \
+          ./wizcli docker scan --image "${{ matrix.image }}:${{ steps.first-tag.outputs.tag }}" --dockerfile "${{ matrix.dockerfile }}Dockerfile" \
             -p "Rmaury-Data" \
             -p "Rmaury-IAC" \
             -p "Rmaury-Secrets" \
@@ -181,12 +182,12 @@ jobs:
       - name: Pull Image for Wiz Tagging
         if: github.event_name != 'pull_request'
         run: |
-          docker pull ${{ steps.first-tag.outputs.tag }}
+          docker pull "${{ matrix.image }}:${{ steps.first-tag.outputs.tag }}"
 
       - name: Tag Container with Wiz
         if: github.event_name != 'pull_request'
         run: |
-          ./wizcli docker tag --image "${{ steps.first-tag.outputs.tag }}"
+          ./wizcli docker tag --image "${{ matrix.image }}:${{ steps.first-tag.outputs.tag }}"
         continue-on-error: true
 
       - name: 💾 Install kubectl
@@ -216,8 +217,8 @@ jobs:
         run: |
           helm upgrade --install frontend ./helm/sorcery-solutions-frontend \
             --namespace sorcery \
-            --set image.repository="${{ vars.IMAGE_REGISTRY }}" \
-            --set image.tag="${{ env.tag }}" \
+            --set image.repository="${{ matrix.image }}" \
+            --set image.tag="${{ steps.first-tag.outputs.tag }}" \
             --set image.pullPolicy=Always \
             --set-string env[0].name=NEXT_PUBLIC_API_BASE_URL \
             --set-string env[0].value="${{ env.BACKEND_URL }}" \
