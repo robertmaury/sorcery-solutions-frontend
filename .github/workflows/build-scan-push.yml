@@ -138,7 +138,7 @@ jobs:
       - name: Get First Docker Tag
         id: first-tag
         run: |
-          echo "tag=${{ fromJSON(steps.meta.outputs.json).tags[0] }}" >> $GITHUB_OUTPUT
+          echo "tag=${{ fromJSON(steps.meta.outputs.json).tags[0] }}" >> $GITHUB_ENV
 
       - name: Configure AWS Credentials
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
