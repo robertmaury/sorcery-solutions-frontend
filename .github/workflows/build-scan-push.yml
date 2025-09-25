@@ -41,13 +41,13 @@ jobs:
           # For PRs use the PR head ref; otherwise the current ref name
           echo "ref_name=${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref_name }}" >> $GITHUB_OUTPUT
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           ref: ${{ steps.ref.outputs.ref_name }}
           fetch-depth: 0
           persist-credentials: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v20.x # v4.0.2
         with:
           node-version: '18'  # match your Docker base image
           cache: 'npm'
@@ -110,7 +110,7 @@ jobs:
             image: ${{ vars.IMAGE_REGISTRY }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           # Always build from the exact commit that includes the lockfile fix
           ref: ${{ needs.sync-lockfile.outputs.final_sha }}
@@ -121,14 +121,14 @@ jobs:
         run: echo "SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_ENV
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@6882ce22ab562304617179b423382637265e7858 # v3.0.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@d70bba72b6f3e222546a77607420de0819249c25 # v3.3.0
 
       - name: Collect Docker Metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
         with:
           images: ${{ matrix.image }}
           tags: |
@@ -143,20 +143,20 @@ jobs:
 
       - name: Configure AWS Credentials
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e07155b26525b1e # v4.0.2
         with:
           role-to-assume: ${{ secrets.AWS_ROLE }}
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Log in to ECR Container Registry
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        uses: docker/login-action@v3
+        uses: docker/login-action@e92390c5fb421da1463c202d546fed0ec5c39f20 # v3.1.0
         with:
           registry: ${{ vars.IMAGE_REGISTRY }}
 
       - name: Build Docker Image
         id: build-image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@2cdde995de11925a030ce8070c3d77a52ffcf1c0 # v6.1.0
         with:
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -192,11 +192,11 @@ jobs:
 
       - name: 💾 Install kubectl
         if: github.event_name != 'pull_request'
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@fe4545565365112b01a7a0c99632003b664b3a5e # v3.0
 
       - name: 💾 Install Helm
         if: github.event_name != 'pull_request'
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v4.2.0
 
       - name: 📡 Update kubeconfig for EKS
         if: github.event_name != 'pull_request'
