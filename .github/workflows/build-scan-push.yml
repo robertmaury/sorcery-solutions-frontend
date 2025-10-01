@@ -179,7 +179,7 @@ jobs:
           ./wizcli docker scan --image "${{ matrix.image }}:${{ steps.first-tag.outputs.tag }}" \
             -p "rmaury-secrets" \
             -p "rmaury-vulnerabilities" \
-            -p "rmaury-host-configuration"
+            -p "rmaury-senstive-data"
         continue-on-error: true
 
       - name: Pull Image for Wiz Tagging
