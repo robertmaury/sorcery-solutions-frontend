@@ -173,11 +173,9 @@ jobs:
           chmod +x wizcli
           ./wizcli auth
 
-          # Scan the Dockerfile as IaC
           ./wizcli iac scan --path "${{ matrix.dockerfile }}Dockerfile" \
             -p "rmaury-iac"
 
-          # Scan the built container image
           ./wizcli docker scan --image "${{ matrix.image }}:${{ steps.first-tag.outputs.tag }}" \
             -p "rmaury-secrets" \
             -p "rmaury-vulnerabilities" \
