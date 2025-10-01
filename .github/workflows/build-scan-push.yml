@@ -173,10 +173,10 @@ jobs:
           chmod +x wizcli
           ./wizcli auth
           ./wizcli docker scan --image "${{ matrix.image }}:${{ steps.first-tag.outputs.tag }}" --dockerfile "${{ matrix.dockerfile }}Dockerfile" \
-            -p "Rmaury-Data" \
-            -p "Rmaury-IAC" \
-            -p "Rmaury-Secrets" \
-            -p "Rmaury-Vuln"
+            -p "Rmaury-data" \
+            -p "Rmaury-iac" \
+            -p "Rmaury-secrets" \
+            -p "Rmaury-vulnerabilities"
         continue-on-error: true
 
       - name: Pull Image for Wiz Tagging
