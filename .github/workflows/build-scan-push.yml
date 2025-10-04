@@ -147,14 +147,16 @@ jobs:
         with:
           images: ${{ matrix.image }}
           tags: |
-            type=sha
-            type=raw,value=latest
+            type=sha,format=short
 
       - name: Get First Docker Tag
         id: first-tag
         run: |
-          TAG=$(echo '${{ steps.meta.outputs.json }}' | jq -r '.tags[0]' | cut -d: -f2)
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          image_ref=$(echo "${{ steps.meta.outputs.tags }}" | head -n1 | tr -d '\r' | xargs)
+          echo "image_ref=${image_ref}" >> $GITHUB_OUTPUT
+
+          tag="${image_ref##*:}"
+          echo "tag=${tag}" >> $GITHUB_OUTPUT
 
       - name: Configure AWS Credentials
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -190,12 +192,12 @@ jobs:
           ./wizcli auth
 
           ./wizcli iac scan --path "${{ matrix.dockerfile }}Dockerfile" \
-            -p "rmaury-iac"
+            -p "${{ vars.project }}-iac"
 
-          ./wizcli docker scan --image "${{ matrix.image }}:${{ steps.first-tag.outputs.tag }}" \
-            -p "rmaury-secrets" \
-            -p "rmaury-vulnerabilities" \
-            -p "rmaury-senstive-data"
+          ./wizcli docker scan --image "${{ steps.first-tag.outputs.image_ref }}" \
+            -p "${{ vars.project }}-secrets" \
+            -p "${{ vars.project }}-vulnerabilities" \
+            -p "${{ vars.project }}-senstive-data"
         continue-on-error: true
 
       - name: Pull Image for Wiz Tagging
@@ -206,7 +208,7 @@ jobs:
       - name: Tag Container with Wiz
         if: github.event_name != 'pull_request'
         run: |
-          ./wizcli docker tag --image "${{ matrix.image }}:${{ steps.first-tag.outputs.tag }}"
+          ./wizcli docker tag --image "${{ steps.first-tag.outputs.image_ref }}"
         continue-on-error: true
 
       - name: 💾 Install kubectl
