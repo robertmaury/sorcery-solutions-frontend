@@ -233,10 +233,10 @@ jobs:
           BACKEND_SVC=$(kubectl get svc backend-sorcery-solutions-backend -n sorcery -o jsonpath="{.metadata.name}")
           echo "BACKEND_URL=http://${BACKEND_SVC}.sorcery.svc.cluster.local:8000" >> $GITHUB_ENV
 
-      - name: Clear Admission controller cache
-        if: github.event_name != 'pull_request'
-        run : |
-          kubectl rollout restart deployment wiz-integration-wiz-admission-controller -n wiz
+      # - name: Clear Admission controller cache
+      #   if: github.event_name != 'pull_request'
+      #   run : |
+      #     kubectl rollout restart deployment wiz-integration-wiz-admission-controller -n wiz
 
       - name: 🚀 Deploy Frontend via Helm with ELB Ingress
         if: github.event_name != 'pull_request'
