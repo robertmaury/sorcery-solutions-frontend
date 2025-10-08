@@ -1,0 +1,6 @@
+ignore:
+  iac:
+    ccccb9f1-23c1-4475-9c5d-b709cbd52a2c:
+      "/**/sorcery-solutions-frontend/helm/sorcery-solutions-frontend/templates/deployment.yaml":
+        reason: Demo
+        expires: 2026-10-01T00:00:00Z
