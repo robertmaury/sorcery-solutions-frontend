@@ -163,9 +163,6 @@ jobs:
       - name: Build Docker Image
         id: build-image
         uses: docker/build-push-action@v6
-        env:
-          WIZOS_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
-          WIZOS_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
         with:
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -175,8 +172,8 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64
           secrets: |
-            id=WIZOS_CLIENT_ID,env=WIZOS_CLIENT_ID
-            id=WIZOS_CLIENT_SECRET,env=WIZOS_CLIENT_SECRET
+            WIZOS_CLIENT_ID=${{ secrets.WIZ_CLIENT_ID }}
+            WIZOS_CLIENT_SECRET= ${{ secrets.WIZ_CLIENT_SECRET }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
