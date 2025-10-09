@@ -10,7 +10,9 @@ FROM base AS deps
 # use apk-auth to install packages from the wizos apk registry
 RUN --mount=type=secret,id=WIZOS_CLIENT_ID \
     --mount=type=secret,id=WIZOS_CLIENT_SECRET \
-    export $(WIZOS_SECRET_PATH=/run/secrets apk-auth) && \
+    export WIZOS_CLIENT_ID="$(cat /run/secrets/WIZOS_CLIENT_ID)" \
+           WIZOS_CLIENT_SECRET="$(cat /run/secrets/WIZOS_CLIENT_SECRET)" && \
+    eval "$(apk-auth)" && \
     apk add --no-cache \
     git
 # Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
