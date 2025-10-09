@@ -173,6 +173,9 @@ jobs:
           load: true
           push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64
+          secrets: |
+            id=WIZOS_CLIENT_ID,env=WIZOS_CLIENT_ID
+            id=WIZOS_CLIENT_SECRET,env=WIZOS_CLIENT_SECRET
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
