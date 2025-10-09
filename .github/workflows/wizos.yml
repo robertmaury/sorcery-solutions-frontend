@@ -90,6 +90,8 @@ jobs:
     env:
       WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
       WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
+      WIZOS_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
+      WIZOS_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
     strategy:
       fail-fast: false
       matrix:
