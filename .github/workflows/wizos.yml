@@ -1,0 +1,270 @@
+name: Build and Deploy with WizOS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  sync-lockfile:
+    runs-on: ubuntu-latest
+    # This job ALWAYS runs so outputs are always available
+    permissions:
+      contents: write
+    outputs:
+      final_sha: ${{ steps.out.outputs.final_sha }}
+      ref_name:  ${{ steps.ref.outputs.ref_name }}
+      is_pr:     ${{ steps.flags.outputs.is_pr }}
+      same_repo: ${{ steps.flags.outputs.same_repo }}
+    steps:
+      # --- Decide refs and flags (always runs) ---
+      - id: flags
+        run: |
+          echo "is_pr=${{ github.event_name == 'pull_request' && 'true' || 'false' }}" >> $GITHUB_OUTPUT
+          echo "same_repo=${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name == github.repository) && 'true' || 'false' }}" >> $GITHUB_OUTPUT
+      - id: ref
+        run: |
+          # For PRs use the PR head ref; otherwise the current ref name
+          echo "ref_name=${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref_name }}" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ref.outputs.ref_name }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'  # match your Docker base image
+          cache: 'npm'
+
+      # --- Validate only on PRs ---
+      - name: Validate lockfile (dry-run)
+        id: validate
+        if: steps.flags.outputs.is_pr == 'true'
+        run: |
+          set +e
+          npm ci --dry-run >/dev/null 2>&1
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+          exit 0
+
+      # --- Regenerate only if out-of-sync on same-repo PRs ---
+      - name: Regenerate lockfile
+        if: |
+          steps.flags.outputs.is_pr == 'true' &&
+          steps.validate.outputs.exit_code != '0' &&
+          steps.flags.outputs.same_repo == 'true'
+        run: npm install --package-lock-only --no-audit --no-fund
+
+      - name: Commit & push lockfile
+        if: |
+          steps.flags.outputs.is_pr == 'true' &&
+          steps.validate.outputs.exit_code != '0' &&
+          steps.flags.outputs.same_repo == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "chore: sync package-lock.json with package.json [CI]" || echo "No changes"
+          git push
+
+      # --- Optional: fail fast on forks (or switch to a helper-PR flow) ---
+      - name: Fail fast on forks (cannot push)
+        if: |
+          steps.flags.outputs.is_pr == 'true' &&
+          steps.validate.outputs.exit_code != '0' &&
+          steps.flags.outputs.same_repo != 'true'
+        run: |
+          echo "::error ::Forked PR: lockfile out of sync. Please run 'npm install --package-lock-only' and commit."
+          exit 1
+
+      # --- Always publish an output SHA, even if nothing happened ---
+      - id: out
+        run: echo "final_sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+  docker_build:
+    needs: sync-lockfile
+    runs-on: ubuntu-latest
+    env:
+      WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
+      WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dockerfile: ./
+            image: ${{ startsWith(vars.REPO, vars.REGISTRY) && vars.REPO || format('{0}/{1}', vars.REGISTRY, vars.REPO) }}
+          
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Always build from the exact commit that includes the lockfile fix
+          ref: ${{ needs.sync-lockfile.outputs.final_sha }}
+          fetch-depth: 0
+
+      - name: Get Short SHA
+        id: get_short_sha
+        run: echo "SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_ENV
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Validate image coordinates
+        run: |
+          REGISTRY="${{ vars.REGISTRY }}"
+          REPO="${{ vars.REPO }}"
+
+          if [ -z "$REGISTRY" ]; then
+            echo "::error ::Missing repo variable: REGISTRY" >&2
+            exit 1
+          fi
+
+          if [ -z "$REPO" ]; then
+            echo "::error ::Missing repo variable: REPO" >&2
+            exit 1
+          fi
+
+      - name: Collect Docker Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=sha,format=short
+
+      - name: Get First Docker Tag
+        id: first-tag
+        run: |
+          image_ref=$(echo "${{ steps.meta.outputs.tags }}" | head -n1 | tr -d '\r' | xargs)
+          echo "image_ref=${image_ref}" >> $GITHUB_OUTPUT
+
+          tag="${image_ref##*:}"
+          echo "tag=${tag}" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS Credentials
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to ECR Container Registry
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.REGISTRY }}
+          ecr: true
+
+      - name: Build Docker Image
+        id: build-image
+        uses: docker/build-push-action@v6
+        with:
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          context: ${{ matrix.dockerfile }}
+          file: ${{ matrix.dockerfile }}Dockerfile.wizos
+          load: true
+          push: ${{ github.event_name != 'pull_request' }}
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Scan Container with Wiz
+        run: |
+          curl -Lo wizcli https://wizcli.app.wiz.io/latest/wizcli-linux-amd64
+          chmod +x wizcli
+          ./wizcli auth
+
+          ./wizcli iac scan --path "${{ matrix.dockerfile }}Dockerfile.wizos" \
+            -p "${{ vars.project }}-iac"
+
+          ./wizcli docker scan --image "${{ steps.first-tag.outputs.image_ref }}" \
+            -p "${{ vars.project }}-secrets" \
+            -p "${{ vars.project }}-vulnerabilities" \
+            -p "${{ vars.project }}-senstive-data"
+        continue-on-error: true
+
+      - name: Pull Image for Wiz Tagging
+        if: github.event_name != 'pull_request'
+        run: |
+          docker pull "${{ matrix.image }}:${{ steps.first-tag.outputs.tag }}"
+
+      - name: Tag Container with Wiz
+        if: github.event_name != 'pull_request'
+        run: |
+          ./wizcli docker tag --image "${{ steps.first-tag.outputs.image_ref }}"
+        continue-on-error: true
+
+      - name: 💾 Install kubectl
+        if: github.event_name != 'pull_request'
+        uses: azure/setup-kubectl@v3
+
+      - name: 💾 Install Helm
+        if: github.event_name != 'pull_request'
+        uses: azure/setup-helm@v4
+
+      - name: 📡 Update kubeconfig for EKS
+        if: github.event_name != 'pull_request'
+        run: |
+          aws eks update-kubeconfig \
+            --region us-east-1 \
+            --name ${{ secrets.EKS_CLUSTER}}
+
+      - name: 🌐 Get Backend service DNS
+        if: github.event_name != 'pull_request'
+        id: backend-url
+        run: |
+          BACKEND_SVC=$(kubectl get svc backend-sorcery-solutions-backend -n sorcery -o jsonpath="{.metadata.name}")
+          echo "BACKEND_URL=http://${BACKEND_SVC}.sorcery.svc.cluster.local:8000" >> $GITHUB_ENV
+
+      # - name: Clear Admission controller cache
+      #   if: github.event_name != 'pull_request'
+      #   run : |
+      #     kubectl rollout restart deployment wiz-integration-wiz-admission-controller -n wiz
+
+      - name: 🚀 Deploy Frontend via Helm with ELB Ingress
+        if: github.event_name != 'pull_request'
+        run: |
+          helm upgrade --install frontend ./helm/sorcery-solutions-frontend \
+            --namespace sorcery \
+            --set image.repository="${{ matrix.image }}" \
+            --set image.tag="${{ steps.first-tag.outputs.tag }}" \
+            --set image.pullPolicy=Always \
+            --set-string env[0].name=NEXT_PUBLIC_API_BASE_URL \
+            --set-string env[0].value="${{ env.BACKEND_URL }}" \
+            --set service.type=LoadBalancer \
+            --set service.port=80 \
+            --set service.targetPort=3000 \
+            --set ingress.enabled=false \
+            --set 'service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-type=nlb' \
+            --set 'service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-nlb-target-type=ip' \
+            --set 'service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-scheme=internet-facing' \
+            --set 'service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-cross-zone-load-balancing-enabled=true' \
+            --set 'service.externalTrafficPolicy=Local' \
+            --wait
+
+      - name: 🌐 Wait for External ELB
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "⏳ Waiting for ELBs..."
+          for i in {1..30}; do
+            ELB_HOSTNAME=$(kubectl get service frontend-sorcery-solutions-frontend -n sorcery -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+            if [[ ! -z "$ELB_HOSTNAME" ]]; then
+              echo "✅ ELB Hostname: http://$ELB_HOSTNAME"
+              echo "ELB_HOSTNAME=http://$ELB_HOSTNAME" >> $GITHUB_ENV
+              break
+            fi
+            echo "Waiting for ELB hostname..."
+            sleep 10
+          done
+
+      - name: ✅ Done
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "Deployment complete! 🎉"
+          echo "Frontend exposed at: ${{ env.ELB_HOSTNAME }}"
